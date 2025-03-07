@@ -1,0 +1,10 @@
+
+fn add(a, b) {
+    return a + b;
+}
+
+fn main() {
+    let v = add(1, 2);
+    return 0;
+}
+
