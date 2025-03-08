@@ -1,7 +1,7 @@
 import * as ast from "./ast.ts";
 import { Checker, Resols } from "./front.ts";
 import { Block, Fn, Local, StmtKind, TerKind } from "./msr.ts";
-import { Ty, tyToString } from "./ty.ts";
+import { Ty } from "./ty.ts";
 
 export class AstToMsrLowerer {
     public constructor(
@@ -32,11 +32,14 @@ class FnLowerer {
     private blocks: Block[] = [];
     private locals: Local[] = [];
 
+    private blockIds = 0;
+
     private returnLocal!: number;
     private paramLocals: number[] = [];
     private letLocals = new Map<number, number>();
 
-    private returnBlock!: number;
+    private entryBlock!: Block;
+    private returnBlock!: Block;
     private loopExitBlocks = new Map<number, number>();
 
     public errorOccured = false;
@@ -60,15 +63,29 @@ class FnLowerer {
             this.paramLocals.push(local);
         }
 
-        this.returnBlock = this.pushBlock(this.kind.body.lineExit);
-        this.pushBlock(this.kind.body.lineEntry);
+        this.returnBlock = this.newBlock(this.kind.body.lineExit);
 
+        this.entryBlock = this.pushBlock(
+            this.newBlock(this.kind.body.lineEntry),
+        );
         this.lowerBlock(this.kind.body);
 
-        this.setTer({ tag: "return" }, this.kind.body.lineExit);
+        this.setTer(
+            { tag: "jmp", target: this.returnBlock.id },
+            this.kind.body.lineExit,
+        );
+        this.pushBlock(this.returnBlock);
+        this.returnBlock.ter = {
+            line: this.kind.body.lineExit,
+            kind: { tag: "return" },
+        };
         return {
+            stmt: this.stmt,
             blocks: this.blocks,
             locals: this.locals,
+            entry: this.entryBlock.id,
+            returnLocal: this.returnLocal,
+            paramLocals: this.paramLocals,
         };
     }
 
@@ -97,48 +114,55 @@ class FnLowerer {
                 return;
             }
             case "loop": {
-                const entry = this.blockId();
-                const exit = this.pushBlock(k.body.lineExit);
-                const loop = this.pushBlock(k.body.lineEntry);
+                const entry = this.block();
+                const loopBreak = this.newBlock(k.body.lineExit);
+                const loop = this.pushBlock(this.newBlock(k.body.lineEntry));
 
-                this.loopExitBlocks.set(stmt.id, exit);
+                this.loopExitBlocks.set(stmt.id, loopBreak.id);
                 this.lowerBlock(k.body);
+                const loopExit = this.block();
 
-                this.blocks[entry].ter = {
+                entry.ter = {
                     line: l,
-                    kind: { tag: "jmp", target: loop },
+                    kind: { tag: "jmp", target: loop.id },
                 };
-                this.blocks[loop].ter = {
+                loopExit.ter = {
                     line: l,
-                    kind: { tag: "jmp", target: k.body.lineExit },
+                    kind: { tag: "jmp", target: loop.id },
                 };
+
+                this.pushBlock(loopBreak);
                 return;
             }
             case "if": {
-                const entry = this.blockId();
                 this.lowerExpr(k.expr);
-                const exit = this.pushBlock(
+                const entry = this.block();
+                const exit = this.newBlock(
                     k.falsy?.lineExit ?? k.truthy.lineExit,
                 );
-                const truthy = this.pushBlock(k.truthy.lineEntry);
+                const truthy = this.pushNewBlock(k.truthy.lineEntry).id;
                 this.lowerBlock(k.truthy);
-                this.setTer({ tag: "jmp", target: exit }, k.truthy.lineExit);
+                this.setTer({ tag: "jmp", target: exit.id }, k.truthy.lineExit);
 
-                let falsy = exit;
+                let falsy = exit.id;
                 if (k.falsy) {
-                    falsy = this.pushBlock(k.falsy?.lineEntry);
+                    falsy = this.pushNewBlock(k.falsy?.lineEntry).id;
                     this.lowerBlock(k.falsy);
-                    this.setTer({ tag: "jmp", target: exit }, k.falsy.lineExit);
-                    this.blocks[entry].ter = {
+                    this.setTer(
+                        { tag: "jmp", target: exit.id },
+                        k.falsy.lineExit,
+                    );
+                    entry.ter = {
                         kind: { tag: "if", truthy, falsy },
                         line: l,
                     };
                 }
 
-                this.blocks[entry].ter = {
+                entry.ter = {
                     kind: { tag: "if", truthy, falsy },
                     line: l,
                 };
+                this.pushBlock(exit);
                 return;
             }
             case "return": {
@@ -149,13 +173,15 @@ class FnLowerer {
                         local: this.returnLocal,
                     }, l);
                 }
-                this.setTer({ tag: "jmp", target: this.returnBlock }, l);
+                this.setTer({ tag: "jmp", target: this.returnBlock.id }, l);
+                this.pushNewBlock(l);
                 return;
             }
             case "break": {
                 const re = this.re.stmt(stmt)!;
                 const target = this.loopExitBlocks.get(re!.stmt.id)!;
                 this.setTer({ tag: "jmp", target }, l);
+                this.pushNewBlock(l);
                 return;
             }
             case "assign": {
@@ -190,6 +216,7 @@ class FnLowerer {
     }
 
     private lowerExpr(expr: ast.Expr) {
+        const ty = this.ch.exprTy(expr);
         const l = expr.line;
         const k = expr.kind;
         switch (k.tag) {
@@ -198,31 +225,93 @@ class FnLowerer {
                 return;
             case "ident": {
                 const re = this.re.expr(expr);
+                if (!re) {
+                    throw new Error();
+                }
+                switch (re.tag) {
+                    case "fn": {
+                        const ty = this.ch.fnStmtTy(re.stmt);
+                        this.pushStmt({
+                            tag: "push",
+                            val: { tag: "fn", stmt: re.stmt },
+                            ty,
+                        }, l);
+                        break;
+                    }
+                    case "param": {
+                        const local = this.paramLocals[re.i];
+                        this.pushStmt({ tag: "load_local", local }, l);
+                        break;
+                    }
+                    case "let": {
+                        const local = this.letLocals.get(re.stmt.id)!;
+                        if (!local) {
+                            throw new Error();
+                        }
+                        this.pushStmt({ tag: "load_local", local }, l);
+                        break;
+                    }
+                    case "loop":
+                        throw new Error();
+                }
                 return;
             }
-            case "int":
-            case "call":
-            case "binary":
+            case "int": {
+                this.pushStmt({
+                    tag: "push",
+                    val: { tag: "int", val: k.val },
+                    ty,
+                }, l);
+                return;
+            }
+            case "call": {
+                for (const arg of k.args) {
+                    this.lowerExpr(arg);
+                }
+                this.lowerExpr(k.expr);
+                this.pushStmt({ tag: "call", args: k.args.length }, l);
+                return;
+            }
+            case "binary": {
+                this.lowerExpr(k.left);
+                this.lowerExpr(k.right);
+                switch (k.op) {
+                    case "<":
+                        this.pushStmt({ tag: "lt", ty }, l);
+                        break;
+                    case "==":
+                        this.pushStmt({ tag: "eq", ty }, l);
+                        break;
+                    case "+":
+                        this.pushStmt({ tag: "add", ty }, l);
+                        break;
+                    case "*":
+                        this.pushStmt({ tag: "mul", ty }, l);
+                        break;
+                }
+                return;
+            }
         }
         const _: never = k;
     }
 
-    private pushBlock(line: number): number {
-        this.blocks.push({
-            line,
-            stmts: [],
-            ter: { kind: { tag: "error" }, line },
-        });
-        return this.blocks.length - 1;
+    private pushNewBlock(line: number): Block {
+        return this.pushBlock(this.newBlock(line));
+    }
+
+    private newBlock(line: number): Block {
+        const id = this.blockIds++;
+        return { id, line, stmts: [] };
+    }
+
+    private pushBlock(block: Block): Block {
+        this.blocks.push(block);
+        return block;
     }
 
     private pushLocal(ty: Ty): number {
         this.locals.push({ ty });
         return this.locals.length - 1;
-    }
-
-    private blockId(): number {
-        return this.blocks.length - 1;
     }
 
     private block(): Block {

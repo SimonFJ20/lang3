@@ -57,17 +57,17 @@ export class Checker {
                 case "error":
                     return { tag: "error" };
                 case "ident": {
-                    const res = this.re.expr(expr);
-                    if (!res) {
+                    const re = this.re.expr(expr);
+                    if (!re) {
                         throw new Error();
                     }
-                    switch (res.tag) {
+                    switch (re.tag) {
                         case "fn":
-                            return this.fnStmtTy(res.stmt);
+                            return this.fnStmtTy(re.stmt);
                         case "param":
-                            return this.paramTy(res.stmt, res.i);
+                            return this.paramTy(re.stmt, re.i);
                         case "let":
-                            return this.letStmtTy(res.stmt);
+                            return this.letStmtTy(re.stmt);
                         case "loop":
                             throw new Error();
                     }
@@ -160,16 +160,16 @@ export type Resolve =
     | { tag: "let"; stmt: Stmt }
     | { tag: "loop"; stmt: Stmt };
 
-export function resolveToString(res: Resolve): string {
-    switch (res.tag) {
+export function resolveToString(re: Resolve): string {
+    switch (re.tag) {
         case "fn":
-            return `fn(id: ${res.stmt.id}, line: ${res.stmt.line})`;
+            return `fn(id: ${re.stmt.id}, line: ${re.stmt.line})`;
         case "param":
-            return `param(i: ${res.i})`;
+            return `param(i: ${re.i})`;
         case "let":
-            return `let(id: ${res.stmt.id}, line: ${res.stmt.line})`;
+            return `let(id: ${re.stmt.id}, line: ${re.stmt.line})`;
         case "loop":
-            return `loop(id: ${res.stmt.id}, line: ${res.stmt.line})`;
+            return `loop(id: ${re.stmt.id}, line: ${re.stmt.line})`;
     }
 }
 
@@ -200,8 +200,8 @@ export class RootSyms implements Syms {
         return this.exprResols.get(ident);
     }
 
-    defineVal(ident: string, res: Resolve): void {
-        this.exprResols.set(ident, res);
+    defineVal(ident: string, re: Resolve): void {
+        this.exprResols.set(ident, re);
     }
 }
 
@@ -227,8 +227,8 @@ export class FnSyms implements Syms {
         return parent;
     }
 
-    defineVal(ident: string, res: Resolve): void {
-        this.exprResols.set(ident, res);
+    defineVal(ident: string, re: Resolve): void {
+        this.exprResols.set(ident, re);
     }
 }
 
@@ -243,8 +243,8 @@ export class NormalSyms implements Syms {
         return this.exprResols.get(ident) ?? this.parent.val(ident);
     }
 
-    defineVal(ident: string, res: Resolve): void {
-        this.exprResols.set(ident, res);
+    defineVal(ident: string, re: Resolve): void {
+        this.exprResols.set(ident, re);
     }
 }
 
@@ -355,12 +355,12 @@ export class Resolver {
             case "error":
                 return;
             case "ident": {
-                const res = this.syms.val(k.ident);
-                if (!res) {
+                const re = this.syms.val(k.ident);
+                if (!re) {
                     this.report(`ident '${k.ident}' not defined`, expr.line);
                     return;
                 }
-                this.exprResols.set(expr.id, res);
+                this.exprResols.set(expr.id, re);
                 return;
             }
             case "int":
