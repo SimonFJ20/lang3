@@ -16,7 +16,7 @@ fn add(a, b) {
 }
 
 fn main() {
-    let v = add(2, 2);
+    let v = add(1, 2);
     return 0;
 }
 
