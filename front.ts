@@ -390,6 +390,7 @@ export class Parser {
     private toks: Tok[];
     private i = 0;
 
+    private blockIds = 0;
     private stmtIds = 0;
     private exprIds = 0;
 
@@ -425,12 +426,13 @@ export class Parser {
                 stmts.push(this.parseStmt());
             }
         }
+        const id = this.blockIds++;
         if (!this.eat("}")) {
             this.report("expected '}'");
-            return { lineEntry, lineExit: 0, stmts: [] };
+            return { id, lineEntry, lineExit: 0, stmts: [] };
         }
         const lineExit = this.eaten!.line;
-        return { lineEntry, lineExit, stmts };
+        return { id, lineEntry, lineExit, stmts };
     }
 
     private parseStmt(): Stmt {

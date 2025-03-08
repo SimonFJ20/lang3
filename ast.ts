@@ -1,4 +1,5 @@
 export type Block = {
+    id: number;
     lineEntry: number;
     lineExit: number;
     stmts: Stmt[];
