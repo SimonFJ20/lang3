@@ -1,6 +1,6 @@
 import * as ast from "./ast.ts";
 import { Checker, Resols } from "./front.ts";
-import { Block, Fn, Local, StmtKind, TerKind } from "./msr.ts";
+import { Block, BlockId, Fn, Local, StmtKind, TerKind } from "./msr.ts";
 import { Ty } from "./ty.ts";
 
 export class AstToMsrLowerer {
@@ -29,9 +29,10 @@ export class AstToMsrLowerer {
 }
 
 class FnLowerer {
-    private blocks: Block[] = [];
+    private blocks = new Map<BlockId, Block>();
     private locals: Local[] = [];
 
+    private currentBlock!: Block;
     private blockIds = 0;
 
     private returnLocal!: number;
@@ -52,6 +53,9 @@ class FnLowerer {
     ) {}
 
     public lower(): Fn {
+        if (this.stmt.kind.tag !== "fn") {
+            throw new Error();
+        }
         const ty = this.ch.fnStmtTy(this.stmt);
         if (ty.tag !== "fn") {
             throw new Error();
@@ -81,6 +85,7 @@ class FnLowerer {
         };
         return {
             stmt: this.stmt,
+            ident: this.stmt.kind.ident,
             blocks: this.blocks,
             locals: this.locals,
             entry: this.entryBlock.id,
@@ -301,11 +306,13 @@ class FnLowerer {
 
     private newBlock(line: number): Block {
         const id = this.blockIds++;
-        return { id, line, stmts: [] };
+        const block: Block = { id, line, stmts: [] };
+        this.blocks.set(block.id, block);
+        return block;
     }
 
     private pushBlock(block: Block): Block {
-        this.blocks.push(block);
+        this.currentBlock = block;
         return block;
     }
 
@@ -315,7 +322,7 @@ class FnLowerer {
     }
 
     private block(): Block {
-        return this.blocks.at(-1)!;
+        return this.currentBlock;
     }
 
     private pushStmt(kind: StmtKind, line: number) {
