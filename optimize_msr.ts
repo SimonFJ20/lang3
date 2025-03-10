@@ -1,11 +1,127 @@
 import { Block, BlockId, Fn } from "./msr.ts";
+import { MsrStringifyer } from "./msr_stringifyer.ts";
 
 export function optimizeMsr(msr: Fn[]) {
+    const msrStr = new MsrStringifyer();
+
     for (const fn of msr) {
         console.log(`\noptimizing ${fn.ident}`);
         new EliminateBlocks(fn).pass();
+
+        const liveInfo = new LiveInfo(fn);
+        liveInfo.gatherInitialInfo();
+        liveInfo.solveLiveOut();
+        console.log(liveInfo.toString());
+
+        console.log(msrStr.fn(fn));
     }
     console.log("");
+}
+
+class LiveInfo {
+    // varibles defined in block
+    private varkillSets = new Map<BlockId, Set<number>>();
+    // variables upwardly-exposed in block
+    private uevarSets = new Map<BlockId, Set<number>>();
+
+    private liveoutSets = new Map<BlockId, Set<number>>();
+
+    public constructor(
+        private fn: Fn,
+    ) {}
+
+    public gatherInitialInfo() {
+        for (const [id, block] of this.fn.blocks) {
+            this.varkillSets.set(id, new Set());
+            this.uevarSets.set(id, new Set());
+
+            const varkill = this.varkillSets.get(id)!;
+            const uevar = this.uevarSets.get(id)!;
+
+            msrVisitBlockLocals({
+                block,
+                sourceVisitor: (local) => {
+                    if (!varkill.has(local)) {
+                        uevar.add(local);
+                    }
+                },
+                destVisitor: (local) => {
+                    varkill.add(local);
+                },
+            });
+        }
+    }
+
+    public solveLiveOut() {
+        for (const [id, _block] of this.fn.blocks) {
+            this.liveoutSets.set(id, new Set());
+        }
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const [id, _block] of this.fn.blocks) {
+                const varkill = this.varkillSets.get(id)!;
+                const uevar = this.uevarSets.get(id)!;
+                const oldLiveout = this.liveoutSets.get(id)!;
+
+                this.liveoutSets.set(
+                    id,
+                    // uevar.union(oldLiveout.difference(varkill)),
+                    uevar.union(varkill.difference(oldLiveout)),
+                );
+
+                if (this.liveoutSets.get(id)!.difference(oldLiveout).size > 0) {
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    public toString(): string {
+        return `varkill:\n${
+            this.varkillSets
+                .entries()
+                .toArray()
+                .map(([blockId, locals]) =>
+                    `    .b${blockId}: ${
+                        locals
+                            .values()
+                            .toArray()
+                            .map((v) => `%${v}`)
+                            .join(", ")
+                    }\n`
+                )
+                .join("")
+        }uevar:\n${
+            this.uevarSets
+                .entries()
+                .toArray()
+                .map(([blockId, locals]) =>
+                    `    .b${blockId}: ${
+                        locals
+                            .values()
+                            .toArray()
+                            .map((v) => `%${v}`)
+                            .join(", ")
+                    }\n`
+                )
+                .join("")
+        }liveout:\n${
+            this.uevarSets
+                .entries()
+                .toArray()
+                .map(([blockId, locals]) =>
+                    `    .b${blockId}: ${
+                        locals
+                            .values()
+                            .toArray()
+                            .map((v) => `%${v}`)
+                            .join(", ")
+                    }\n`
+                )
+                .join("")
+        }`;
+    }
 }
 
 class EliminateBlocks {
@@ -33,7 +149,6 @@ class EliminateBlocks {
         });
 
         for (const cand of cands.keys()) {
-            console.log(`removing block ${cand}`);
             this.fn.blocks.delete(cand);
         }
     }
@@ -63,7 +178,6 @@ class EliminateBlocks {
             const block = this.fn.blocks.get(blockId)!;
             const parent = this.fn.blocks.get(parentId)!;
 
-            console.log(`removing block ${block.id} with parent ${parent.id}`);
             parent.stmts.push(...block.stmts);
             parent.ter = block.ter;
             this.fn.blocks.delete(block.id);
@@ -84,7 +198,6 @@ class EliminateBlocks {
             cands.set(block.id, target);
         }
         for (const [parent, block] of cands) {
-            console.log(`removing block ${parent} with child ${block}`);
             if (this.fn.entry === parent) {
                 this.fn.entry = block;
             }
@@ -126,6 +239,45 @@ class MsrCfgForward {
             this.jumps.get(block.id)!.add(id);
             this.visitBlock(this.fn.blocks.get(id)!);
         }
+    }
+}
+
+export function msrVisitBlockLocals(
+    { block, sourceVisitor, destVisitor }: {
+        block: Block;
+        sourceVisitor: (local: number) => number | void;
+        destVisitor: (local: number) => number | void;
+    },
+) {
+    for (const stmt of block.stmts) {
+        switch (stmt.kind.tag) {
+            case "error":
+            case "push":
+            case "pop":
+            case "lt":
+            case "eq":
+            case "add":
+            case "mul":
+                break;
+            case "load_local":
+                sourceVisitor(stmt.kind.local);
+                break;
+            case "store_local":
+                destVisitor(stmt.kind.local);
+                break;
+            case "call":
+                break;
+        }
+    }
+    switch (block.ter!.kind.tag) {
+        case "error":
+            break;
+        case "return":
+            break;
+        case "jmp":
+            break;
+        case "if":
+            break;
     }
 }
 

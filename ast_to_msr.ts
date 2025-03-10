@@ -84,7 +84,7 @@ class FnLowerer {
             kind: { tag: "return" },
         };
         return {
-            stmt: this.stmt,
+            astStmt: this.stmt,
             ident: this.stmt.kind.ident,
             blocks: this.blocks,
             locals: this.locals,

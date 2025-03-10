@@ -2,7 +2,7 @@ import * as ast from "./ast.ts";
 import { Ty } from "./ty.ts";
 
 export type Fn = {
-    stmt: ast.Stmt;
+    astStmt: ast.Stmt;
     ident: string;
     blocks: Map<BlockId, Block>;
     locals: Local[];

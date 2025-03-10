@@ -21,7 +21,7 @@ async function main() {
 
     console.log("\n=== OPTIMIZATION ===\n");
     optimizeMsr(msr);
-    console.log(msr.map((fn) => msrStr.fn(fn)).join("\n"));
+    // console.log(msr.map((fn) => msrStr.fn(fn)).join("\n"));
 }
 
 main();

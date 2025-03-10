@@ -81,12 +81,11 @@ export class MsrStringifyer {
             case "int":
                 return `${val.val}`;
             case "fn": {
-                //const k = val.stmt.kind;
-                //if (k.tag !== "fn") {
-                //    throw new Error();
-                //}
-                //return `fn ${k.ident}`;
-                return "";
+                const k = val.stmt.kind;
+                if (k.tag !== "fn") {
+                    throw new Error();
+                }
+                return `${k.ident}`;
             }
         }
     }
