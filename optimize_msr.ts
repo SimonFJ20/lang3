@@ -52,17 +52,21 @@ class DomInfo {
     }
 
     public solveDom() {
-        const rpo = msrCfgRPO(this.fn);
+        const order = msrCfgRPO(this.fn);
+        // const order = this.fn.blocks.keys().toArray();
 
         this.domSets.set(this.fn.entry, new Set([this.fn.entry]));
-        for (const block of this.fn.blocks.values().toArray().slice(1)) {
+        for (const block of this.fn.blocks.values()) {
+            if (block.id === this.fn.entry) {
+                continue;
+            }
             this.domSets.set(block.id, new Set(this.fn.blocks.keys()));
         }
         let changed = true;
         while (changed) {
             changed = false;
-            for (const i of rpo) {
-                if (i == this.fn.entry) {
+            for (const i of order) {
+                if (i === this.fn.entry) {
                     continue;
                 }
                 const oldDom = this.domSets.get(i)!;
@@ -71,7 +75,10 @@ class DomInfo {
                         this.preds
                             .pred(i)
                             .map((j) => this.domSets.get(j)!)
-                            .reduce((acc, v) => acc.union(v), new Set()),
+                            .reduce(
+                                (acc, v) => acc.intersection(v),
+                                new Set(this.fn.blocks.keys()),
+                            ),
                     ),
                 );
                 if (
@@ -155,7 +162,8 @@ class LiveInfo {
     }
 
     public solveLiveOut() {
-        const rpo = msrCfgRPO(this.fn);
+        const order = msrCfgReverseRPO(this.fn);
+        // const order = this.fn.blocks.keys().toArray();
 
         for (const [i, _block] of this.fn.blocks) {
             this.liveoutSets.set(i, new Set());
@@ -163,7 +171,7 @@ class LiveInfo {
         let changed = true;
         while (changed) {
             changed = false;
-            for (const i of rpo) {
+            for (const i of order) {
                 const newLiveoutSets: Set<number>[] = [];
 
                 const nSucc = cfgSucc(this.fn.blocks.get(i)!);
@@ -307,6 +315,23 @@ class EliminateBlocks {
         }
     }
 }
+export function msrCfgReverseRPO(fn: Fn, po = msrCfgReversePO(fn)): BlockId[] {
+    return po.toReversed();
+}
+
+export function msrCfgReversePO(fn: Fn): BlockId[] {
+    const preds = new CfgPreds(fn);
+    const ids: BlockId[] = [];
+    new MsrCfgPostOrder(
+        fn,
+        (block) => {
+            ids.push(block.id);
+        },
+        (block: Block) => preds.pred(block.id),
+        preds.last(),
+    ).pass();
+    return ids;
+}
 
 export function msrCfgRPO(fn: Fn, po = msrCfgPO(fn)): BlockId[] {
     return po.toReversed();
@@ -326,10 +351,12 @@ class MsrCfgPostOrder {
     public constructor(
         private fn: Fn,
         private action: (block: Block) => void,
+        private nextBlocks = msrBlockTargets,
+        private entry = fn.entry,
     ) {}
 
     public pass() {
-        this.visitBlock(this.fn.blocks.get(this.fn.entry)!);
+        this.visitBlock(this.fn.blocks.get(this.entry)!);
     }
 
     private visitBlock(block: Block) {
@@ -337,7 +364,7 @@ class MsrCfgPostOrder {
             return;
         }
         this.blocks.add(block.id);
-        for (const id of msrBlockTargets(block)) {
+        for (const id of this.nextBlocks(block)) {
             this.visitBlock(this.fn.blocks.get(id)!);
         }
         this.action(block);
@@ -346,6 +373,7 @@ class MsrCfgPostOrder {
 
 export class CfgPreds {
     private predSets = new Map<BlockId, number[]>();
+    private lastId!: BlockId;
 
     public constructor(
         private fn: Fn,
@@ -358,7 +386,11 @@ export class CfgPreds {
             this.predSets.set(id, []);
         }
         for (const [id, block] of this.fn.blocks) {
-            for (const succ of cfgSucc(block)) {
+            const succs = cfgSucc(block);
+            if (succs.length === 0) {
+                this.lastId = id;
+            }
+            for (const succ of succs) {
                 this.predSets.get(succ)!.push(id);
             }
         }
@@ -366,6 +398,10 @@ export class CfgPreds {
 
     public pred(id: BlockId): BlockId[] {
         return this.predSets.get(id)!;
+    }
+
+    public last(): BlockId {
+        return this.lastId;
     }
 }
 
