@@ -14,7 +14,7 @@ export type Stmt = {
 export type StmtKind =
     | { tag: "error" }
     | { tag: "fn" } & FnStmt
-    | { tag: "let"; ident: string; expr: Expr }
+    | { tag: "let"; ident: string; expr?: Expr }
     | { tag: "loop"; body: Block }
     | { tag: "if"; expr: Expr; truthy: Block; falsy?: Block }
     | { tag: "return"; expr?: Expr }

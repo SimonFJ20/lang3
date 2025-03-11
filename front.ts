@@ -42,7 +42,7 @@ export class Checker {
         if (this.stmtTys.has(stmt.id)) {
             return this.stmtTys.get(stmt.id)!;
         }
-        const ty = this.exprTy(k.expr);
+        const ty: Ty = k.expr ? this.exprTy(k.expr) : { tag: "int" };
         this.stmtTys.set(stmt.id, ty);
         return ty;
     }
@@ -315,7 +315,7 @@ export class Resolver {
                 return;
             case "let":
                 this.syms.defineVal(k.ident, { tag: "let", stmt });
-                this.resolveExpr(k.expr);
+                k.expr && this.resolveExpr(k.expr);
                 return;
             case "loop":
                 this.loopStack.push(stmt);
@@ -523,8 +523,11 @@ export class Parser {
         }
         const ident = this.eaten!.identVal!;
         if (!this.eat("=")) {
-            this.report("expected '='");
-            return this.stmt({ tag: "error" }, line);
+            if (!this.eat(";")) {
+                this.report("expected ';'");
+                return this.stmt({ tag: "error" }, line);
+            }
+            return this.stmt({ tag: "let", ident }, line);
         }
         const expr = this.parseExpr();
         if (!this.eat(";")) {

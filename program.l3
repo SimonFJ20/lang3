@@ -1,19 +1,14 @@
 
-fn example() {
-    let s = 0;
-    let i = 0;
-    loop {
-        if i < 5 {
-            s = 0;
-        }
-        s = s + i;
-        i = i + 1;
-        if 5 < i {
-            break;
-        }
-    }
-    return s;
-}
+# fn example() {
+#     let i;
+#     loop {
+#         if 10 < i {
+#             break;
+#         }
+#         i = i + 1;
+#     }
+#     return i;
+# }
 
 # # v = 0..10
 # fn hyperbole(v) {

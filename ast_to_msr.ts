@@ -114,8 +114,10 @@ class FnLowerer {
                 const ty = this.ch.letStmtTy(stmt);
                 const local = this.pushLocal(ty);
                 this.letLocals.set(stmt.id, local);
-                this.lowerExpr(k.expr);
-                this.pushStmt({ tag: "store_local", local }, l);
+                if (k.expr) {
+                    this.lowerExpr(k.expr);
+                    this.pushStmt({ tag: "store_local", local }, l);
+                }
                 return;
             }
             case "loop": {

@@ -6,7 +6,7 @@ export function optimizeMsr(msr: Fn[]) {
 
     for (const fn of msr) {
         console.log(`\noptimizing ${fn.ident}`);
-        new EliminateBlocks(fn).pass();
+        //new EliminateBlocks(fn).pass();
 
         const liveInfo = new LiveInfo(fn);
         liveInfo.gatherInitialInfo();
@@ -31,6 +31,11 @@ class LiveInfo {
     ) {}
 
     public gatherInitialInfo() {
+        {
+            const id = -1;
+            this.varkillSets.set(id, new Set());
+            this.uevarSets.set(id, new Set());
+        }
         for (const [id, block] of this.fn.blocks) {
             this.varkillSets.set(id, new Set());
             this.uevarSets.set(id, new Set());
@@ -66,8 +71,7 @@ class LiveInfo {
 
                 this.liveoutSets.set(
                     id,
-                    // uevar.union(oldLiveout.difference(varkill)),
-                    uevar.union(varkill.difference(oldLiveout)),
+                    uevar.union(oldLiveout.difference(varkill)),
                 );
 
                 if (this.liveoutSets.get(id)!.difference(oldLiveout).size > 0) {
