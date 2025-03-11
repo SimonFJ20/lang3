@@ -13,13 +13,34 @@ export function optimizeMsr(msr: Fn[]) {
         liveInfo.solveLiveOut();
         console.log(liveInfo.toString());
 
-        console.log(msrStr.fn(fn));
+        const unitialized = usesOfUninitializedLocals(fn, liveInfo);
+        if (unitialized.size !== 0) {
+            for (const local of unitialized) {
+                const stmt = fn.locals[local].astStmt!;
+                if (!stmt || stmt.kind.tag !== "let") {
+                    continue;
+                }
+                console.log(
+                    `variable ${stmt.kind.ident} used before initialization`,
+                );
+            }
+            // break;
+        }
+
+        // console.log(msrStr.fn(fn));
     }
     console.log("");
 }
 
+function usesOfUninitializedLocals(fn: Fn, liveInfo: LiveInfo): Set<number> {
+    const uevar = liveInfo.uevar(fn.entry);
+    const liveout = liveInfo.liveout(fn.entry);
+    const varkill = liveInfo.varkill(fn.entry);
+    return uevar.union(liveout.difference(varkill));
+}
+
 class LiveInfo {
-    // varibles defined in block
+    // variables defined in block
     private varkillSets = new Map<BlockId, Set<number>>();
     // variables upwardly-exposed in block
     private uevarSets = new Map<BlockId, Set<number>>();
@@ -30,12 +51,17 @@ class LiveInfo {
         private fn: Fn,
     ) {}
 
+    public varkill(id: BlockId): Set<number> {
+        return this.varkillSets.get(id)!;
+    }
+    public uevar(id: BlockId): Set<number> {
+        return this.uevarSets.get(id)!;
+    }
+    public liveout(id: BlockId): Set<number> {
+        return this.liveoutSets.get(id)!;
+    }
+
     public gatherInitialInfo() {
-        {
-            const id = -1;
-            this.varkillSets.set(id, new Set());
-            this.uevarSets.set(id, new Set());
-        }
         for (const [id, block] of this.fn.blocks) {
             this.varkillSets.set(id, new Set());
             this.uevarSets.set(id, new Set());
@@ -58,70 +84,64 @@ class LiveInfo {
     }
 
     public solveLiveOut() {
-        for (const [id, _block] of this.fn.blocks) {
-            this.liveoutSets.set(id, new Set());
+        for (const [i, _block] of this.fn.blocks) {
+            this.liveoutSets.set(i, new Set());
         }
         let changed = true;
         while (changed) {
             changed = false;
-            for (const [id, _block] of this.fn.blocks) {
-                const varkill = this.varkillSets.get(id)!;
-                const uevar = this.uevarSets.get(id)!;
-                const oldLiveout = this.liveoutSets.get(id)!;
+            for (const [i, nBlock] of this.fn.blocks) {
+                const newLiveoutSets: Set<number>[] = [];
 
-                this.liveoutSets.set(
-                    id,
-                    uevar.union(oldLiveout.difference(varkill)),
-                );
+                const nSucc = msrCfgSucc(nBlock);
+                for (const m of nSucc) {
+                    const mLiveout = this.liveoutSets.get(m)!;
+                    const mVarkill = this.varkillSets.get(m)!;
+                    const mUevar = this.uevarSets.get(m)!;
 
-                if (this.liveoutSets.get(id)!.difference(oldLiveout).size > 0) {
+                    newLiveoutSets.push(
+                        mUevar.union(mLiveout.difference(mVarkill)),
+                    );
+                }
+
+                const oldLiveoutSet = this.liveoutSets.get(i)!;
+                const newLiveoutSet = newLiveoutSets
+                    .reduce((acc, set) => acc.union(set), new Set());
+
+                if (
+                    newLiveoutSet.size !== oldLiveoutSet.size ||
+                    newLiveoutSet.union(oldLiveoutSet).size !==
+                        newLiveoutSet.size
+                ) {
                     changed = true;
+                    this.liveoutSets.set(i, newLiveoutSet);
                 }
             }
         }
     }
 
     public toString(): string {
-        return `varkill:\n${
-            this.varkillSets
-                .entries()
-                .toArray()
-                .map(([blockId, locals]) =>
-                    `    .b${blockId}: ${
-                        locals
-                            .values()
+        return `${
+            ([
+                [this.varkillSets, "varkill"],
+                [this.uevarSets, "uevar"],
+                [this.liveoutSets, "liveout"],
+            ] as const)
+                .map(([set, name]) =>
+                    `${name}:\n${
+                        set.entries()
                             .toArray()
-                            .map((v) => `%${v}`)
-                            .join(", ")
-                    }\n`
-                )
-                .join("")
-        }uevar:\n${
-            this.uevarSets
-                .entries()
-                .toArray()
-                .map(([blockId, locals]) =>
-                    `    .b${blockId}: ${
-                        locals
-                            .values()
-                            .toArray()
-                            .map((v) => `%${v}`)
-                            .join(", ")
-                    }\n`
-                )
-                .join("")
-        }liveout:\n${
-            this.uevarSets
-                .entries()
-                .toArray()
-                .map(([blockId, locals]) =>
-                    `    .b${blockId}: ${
-                        locals
-                            .values()
-                            .toArray()
-                            .map((v) => `%${v}`)
-                            .join(", ")
-                    }\n`
+                            .map(([blockId, locals]) =>
+                                `    .b${blockId}: ${
+                                    locals
+                                        .values()
+                                        .toArray()
+                                        .map((v) => `%${v}`)
+                                        .join(", ")
+                                }\n`
+                            )
+                            .join("")
+                    }`
                 )
                 .join("")
         }`;
@@ -212,6 +232,20 @@ class EliminateBlocks {
                 return cands.has(target) ? cands.get(target)! : target;
             });
         }
+    }
+}
+
+export function msrCfgSucc(block: Block): BlockId[] {
+    const k = block.ter!.kind;
+    switch (k.tag) {
+        case "error":
+            return [];
+        case "return":
+            return [];
+        case "jmp":
+            return [k.target];
+        case "if":
+            return [k.truthy, k.falsy];
     }
 }
 

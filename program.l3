@@ -1,40 +1,47 @@
 
-# fn example() {
-#     let i;
-#     loop {
-#         if 10 < i {
-#             break;
-#         }
-#         i = i + 1;
-#     }
-#     return i;
-# }
+fn example() {
+    let i;
+    loop {
+        if 1 {
+            i = 10;
+        } else {
+            i = 20;
+        }
+        if 10 < i {
+            break;
+        }
+        i = i + 1;
+    }
+    return i;
+}
 
-# # v = 0..10
-# fn hyperbole(v) {
-#     let cond = v < 5;
-#     let r = 0;
-#     if cond {
-#         r = 0;
-#     } else {
-#         r = v * 2;
-#     }
-#     return r;
-# }
-# 
-# fn add(a, b) {
-#     loop {
-#         if 5 < a {
-#             break;
-#         }
-#         a = a + 1;
-#     }
-# 
-#     return a + b;
-# }
-# 
-# fn main() {
-#     let v = add(1, 2);
-#     return 0;
-# }
+// v = 0..10
+fn hyperbole(v) {
+    let cond = v < 5;
+    let r = 0;
+    if cond {
+        r = 0;
+    } else {
+        r = v * 2;
+    }
+    return r;
+}
+
+fn add(a, b) {
+    loop {
+        if 5 < a {
+            break;
+        }
+        a = a + 1;
+    }
+
+    return a + b;
+}
+
+fn main() {
+    let v = add(1, 2);
+    return 0;
+}
+
+// vim: syntax=rust commentstring=//%s
 

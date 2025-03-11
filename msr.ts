@@ -23,6 +23,7 @@ export type Block = {
 
 export type Local = {
     ty: Ty;
+    astStmt?: ast.Stmt;
 };
 
 export type Stmt = {

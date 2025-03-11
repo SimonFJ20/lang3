@@ -7,23 +7,32 @@ import { MsrStringifyer } from "./msr_stringifyer.ts";
 import * as msr from "./msr.ts";
 
 async function main() {
-    //const text = await Deno.readTextFile(Deno.args[0]);
-    //const ast = new Parser(text).parse();
-    //const re = new Resolver(ast).resolve();
-    //const ch = new Checker(re);
-    //
-    ////console.log(yaml.stringify(ast));
-    ////
-    //const lowerer = new AstToMsrLowerer(ast, re, ch);
-    //const msr = lowerer.lower();
+    const text = await Deno.readTextFile(Deno.args[0]);
+    const ast = new Parser(text).parse();
+    const re = new Resolver(ast).resolve();
+    const ch = new Checker(re);
 
-    const stmt = (kind: msr.StmtKind): msr.Stmt => ({ line: 0, kind });
+    // console.log(yaml.stringify(ast));
+    //
+    const lowerer = new AstToMsrLowerer(ast, re, ch);
+    const msr = lowerer.lower();
+
+    // const msr = exampleProgram();
+
+    const msrStr = new MsrStringifyer();
+    console.log(msr.map((fn) => msrStr.fn(fn)).join("\n"));
+
+    console.log("\n=== OPTIMIZATION ===\n");
+    optimizeMsr(msr);
+    // console.log(msr.map((fn) => msrStr.fn(fn)).join("\n"));
+}
+
+function exampleProgram(): msr.Fn[] {
     const pushIntStmt = (val: number): msr.Stmt => ({
         line: 0,
         kind: { tag: "push", val: { tag: "int", val }, ty: { tag: "int" } },
     });
-
-    const msr: msr.Fn[] = [{
+    return [{
         astStmt: undefined as unknown as ast.Stmt,
         ident: "ident",
         locals: [
@@ -88,13 +97,6 @@ async function main() {
         returnLocal: 0,
         paramLocals: [],
     }];
-
-    const msrStr = new MsrStringifyer();
-    console.log(msr.map((fn) => msrStr.fn(fn)).join("\n"));
-
-    console.log("\n=== OPTIMIZATION ===\n");
-    optimizeMsr(msr);
-    // console.log(msr.map((fn) => msrStr.fn(fn)).join("\n"));
 }
 
 main();

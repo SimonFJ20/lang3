@@ -731,7 +731,7 @@ export function lex(text: string): Tok[] {
         .split("")
         .reduce((text, op) =>
             text
-                .replaceAll(/#.*?$/mg, "")
+                .replaceAll(/\/\/.*?$/mg, "")
                 .replaceAll(op, ` ${op} `)
                 .replaceAll(" =  = ", " == "), text)
         .split(/[ \t\r]/)

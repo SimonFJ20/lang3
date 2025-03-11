@@ -113,6 +113,7 @@ class FnLowerer {
             case "let": {
                 const ty = this.ch.letStmtTy(stmt);
                 const local = this.pushLocal(ty);
+                this.locals[local].astStmt = stmt;
                 this.letLocals.set(stmt.id, local);
                 if (k.expr) {
                     this.lowerExpr(k.expr);
