@@ -12,6 +12,9 @@ export function optimizeMsr(msr: Fn[]) {
         liveInfo.gatherInitialInfo();
         liveInfo.solveLiveOut();
         console.log(liveInfo.toString());
+        const domInfo = new DomInfo(fn);
+        domInfo.solveDom();
+        console.log(domInfo.toString());
 
         const unitialized = usesOfUninitializedLocals(fn, liveInfo);
         if (unitialized.size !== 0) {
@@ -32,6 +35,72 @@ export function optimizeMsr(msr: Fn[]) {
         console.log(msrStr.fn(fn));
     }
     console.log("");
+}
+
+class DomInfo {
+    private domSets = new Map<BlockId, Set<BlockId>>();
+    private preds: CfgPreds;
+
+    public constructor(
+        private fn: Fn,
+    ) {
+        this.preds = new CfgPreds(this.fn);
+    }
+
+    public dom(block: Block) {
+        return this.domSets.get(block.id)!;
+    }
+
+    public solveDom() {
+        const rpo = msrCfgRPO(this.fn);
+
+        this.domSets.set(this.fn.entry, new Set([this.fn.entry]));
+        for (const block of this.fn.blocks.values().toArray().slice(1)) {
+            this.domSets.set(block.id, new Set(this.fn.blocks.keys()));
+        }
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const i of rpo) {
+                if (i == this.fn.entry) {
+                    continue;
+                }
+                const oldDom = this.domSets.get(i)!;
+                const newDom = new Set([i]).union(
+                    new Set(
+                        this.preds
+                            .pred(i)
+                            .map((j) => this.domSets.get(j)!)
+                            .reduce((acc, v) => acc.union(v), new Set()),
+                    ),
+                );
+                if (
+                    newDom.size !== oldDom.size ||
+                    newDom.union(oldDom).size !== newDom.size
+                ) {
+                    this.domSets.set(i, newDom);
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    public toString() {
+        return `dom:\n${
+            this.domSets
+                .entries()
+                .toArray()
+                .map(([block, doms]) =>
+                    `  .b${block}: ${
+                        doms
+                            .values()
+                            .toArray()
+                            .map((b) => `.b${b}`)
+                            .join(", ")
+                    }\n`
+                ).join("")
+        }`;
+    }
 }
 
 function usesOfUninitializedLocals(fn: Fn, liveInfo: LiveInfo): Set<number> {
@@ -86,16 +155,18 @@ class LiveInfo {
     }
 
     public solveLiveOut() {
+        const rpo = msrCfgRPO(this.fn);
+
         for (const [i, _block] of this.fn.blocks) {
             this.liveoutSets.set(i, new Set());
         }
         let changed = true;
         while (changed) {
             changed = false;
-            for (const [i, nBlock] of this.fn.blocks) {
+            for (const i of rpo) {
                 const newLiveoutSets: Set<number>[] = [];
 
-                const nSucc = msrCfgSucc(nBlock);
+                const nSucc = cfgSucc(this.fn.blocks.get(i)!);
                 for (const m of nSucc) {
                     const mLiveout = this.liveoutSets.get(m)!;
                     const mVarkill = this.varkillSets.get(m)!;
@@ -170,7 +241,7 @@ class EliminateBlocks {
             );
 
         cands.delete(this.fn.entry);
-        msrCfgForward(this.fn, (block) => {
+        cfgForward(this.fn, (block) => {
             cands.delete(block.id);
         });
 
@@ -273,7 +344,32 @@ class MsrCfgPostOrder {
     }
 }
 
-export function msrCfgSucc(block: Block): BlockId[] {
+export class CfgPreds {
+    private predSets = new Map<BlockId, number[]>();
+
+    public constructor(
+        private fn: Fn,
+    ) {
+        this.calculatePreds();
+    }
+
+    private calculatePreds() {
+        for (const [id, _] of this.fn.blocks) {
+            this.predSets.set(id, []);
+        }
+        for (const [id, block] of this.fn.blocks) {
+            for (const succ of cfgSucc(block)) {
+                this.predSets.get(succ)!.push(id);
+            }
+        }
+    }
+
+    public pred(id: BlockId): BlockId[] {
+        return this.predSets.get(id)!;
+    }
+}
+
+export function cfgSucc(block: Block): BlockId[] {
     const k = block.ter!.kind;
     switch (k.tag) {
         case "error":
@@ -287,7 +383,7 @@ export function msrCfgSucc(block: Block): BlockId[] {
     }
 }
 
-export function msrCfgForward(fn: Fn, action: (block: Block) => void) {
+export function cfgForward(fn: Fn, action: (block: Block) => void) {
     new MsrCfgForward(fn, action).pass();
 }
 
