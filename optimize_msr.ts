@@ -6,7 +6,7 @@ export function optimizeMsr(msr: Fn[]) {
 
     for (const fn of msr) {
         console.log(`\noptimizing ${fn.ident}`);
-        //new EliminateBlocks(fn).pass();
+        new EliminateBlocks(fn).pass();
 
         const liveInfo = new LiveInfo(fn);
         liveInfo.gatherInitialInfo();
@@ -24,10 +24,12 @@ export function optimizeMsr(msr: Fn[]) {
                     `variable ${stmt.kind.ident} used before initialization`,
                 );
             }
-            // break;
         }
 
-        // console.log(msrStr.fn(fn));
+        const po = msrCfgPO(fn);
+        const rpo = msrCfgRPO(fn, po);
+        console.log({ po, rpo });
+        console.log(msrStr.fn(fn));
     }
     console.log("");
 }
@@ -232,6 +234,42 @@ class EliminateBlocks {
                 return cands.has(target) ? cands.get(target)! : target;
             });
         }
+    }
+}
+
+export function msrCfgRPO(fn: Fn, po = msrCfgPO(fn)): BlockId[] {
+    return po.toReversed();
+}
+
+export function msrCfgPO(fn: Fn): BlockId[] {
+    const ids: BlockId[] = [];
+    new MsrCfgPostOrder(fn, (block) => {
+        ids.push(block.id);
+    }).pass();
+    return ids;
+}
+
+class MsrCfgPostOrder {
+    private blocks = new Set<BlockId>();
+
+    public constructor(
+        private fn: Fn,
+        private action: (block: Block) => void,
+    ) {}
+
+    public pass() {
+        this.visitBlock(this.fn.blocks.get(this.fn.entry)!);
+    }
+
+    private visitBlock(block: Block) {
+        if (this.blocks.has(block.id)) {
+            return;
+        }
+        this.blocks.add(block.id);
+        for (const id of msrBlockTargets(block)) {
+            this.visitBlock(this.fn.blocks.get(id)!);
+        }
+        this.action(block);
     }
 }
 
