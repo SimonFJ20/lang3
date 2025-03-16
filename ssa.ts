@@ -1,10 +1,11 @@
+import * as msr from "./msr.ts";
 import * as ast from "./ast.ts";
 import { Ty } from "./ty.ts";
 
 export type Fn = {
-    astStmt: ast.Stmt;
-    ident: string;
-    blocks: Map<BlockId, Block>;
+    msrFn: msr.Fn;
+
+    blocks: Block[];
     locals: Local[];
 
     entry: BlockId;

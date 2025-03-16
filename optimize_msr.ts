@@ -6,7 +6,7 @@ export function optimizeMsr(msr: Fn[]) {
 
     for (const fn of msr) {
         console.log(`\noptimizing ${fn.ident}`);
-        new EliminateBlocks(fn).pass();
+        //new EliminateBlocks(fn).pass();
 
         const liveInfo = new LiveInfo(fn);
         liveInfo.gatherInitialInfo();
@@ -98,7 +98,7 @@ class DomInfo {
                 .entries()
                 .toArray()
                 .map(([block, doms]) =>
-                    `  .b${block}: ${
+                    `    .b${block}: ${
                         doms
                             .values()
                             .toArray()

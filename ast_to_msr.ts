@@ -67,20 +67,18 @@ class FnLowerer {
             this.paramLocals.push(local);
         }
 
-        this.returnBlock = this.newBlock(this.kind.body.lineExit);
+        this.returnBlock = this.newBlock();
 
         this.entryBlock = this.pushBlock(
-            this.newBlock(this.kind.body.lineEntry),
+            this.newBlock(),
         );
         this.lowerBlock(this.kind.body);
 
         this.setTer(
             { tag: "jmp", target: this.returnBlock.id },
-            this.kind.body.lineExit,
         );
         this.pushBlock(this.returnBlock);
         this.returnBlock.ter = {
-            line: this.kind.body.lineExit,
             kind: { tag: "return" },
         };
         return {
@@ -89,6 +87,7 @@ class FnLowerer {
             blocks: this.blocks,
             locals: this.locals,
             entry: this.entryBlock.id,
+            exit: this.returnBlock.id,
             returnLocal: this.returnLocal,
             paramLocals: this.paramLocals,
         };
@@ -105,7 +104,7 @@ class FnLowerer {
         const k = stmt.kind;
         switch (k.tag) {
             case "error":
-                this.pushStmt({ tag: "error" }, l);
+                this.pushStmt({ tag: "error" });
                 return;
             case "fn":
                 this.report("nested functions not supported", l);
@@ -117,25 +116,23 @@ class FnLowerer {
                 this.letLocals.set(stmt.id, local);
                 if (k.expr) {
                     this.lowerExpr(k.expr);
-                    this.pushStmt({ tag: "store_local", local }, l);
+                    this.pushStmt({ tag: "store_local", local });
                 }
                 return;
             }
             case "loop": {
                 const entry = this.block();
-                const loopBreak = this.newBlock(k.body.lineExit);
-                const loop = this.pushBlock(this.newBlock(k.body.lineEntry));
+                const loopBreak = this.newBlock();
+                const loop = this.pushBlock(this.newBlock());
 
                 this.loopExitBlocks.set(stmt.id, loopBreak.id);
                 this.lowerBlock(k.body);
                 const loopExit = this.block();
 
                 entry.ter = {
-                    line: l,
                     kind: { tag: "jmp", target: loop.id },
                 };
                 loopExit.ter = {
-                    line: l,
                     kind: { tag: "jmp", target: loop.id },
                 };
 
@@ -145,30 +142,25 @@ class FnLowerer {
             case "if": {
                 this.lowerExpr(k.expr);
                 const entry = this.block();
-                const exit = this.newBlock(
-                    k.falsy?.lineExit ?? k.truthy.lineExit,
-                );
-                const truthy = this.pushNewBlock(k.truthy.lineEntry).id;
+                const exit = this.newBlock();
+                const truthy = this.pushNewBlock().id;
                 this.lowerBlock(k.truthy);
-                this.setTer({ tag: "jmp", target: exit.id }, k.truthy.lineExit);
+                this.setTer({ tag: "jmp", target: exit.id });
 
                 let falsy = exit.id;
                 if (k.falsy) {
-                    falsy = this.pushNewBlock(k.falsy?.lineEntry).id;
+                    falsy = this.pushNewBlock().id;
                     this.lowerBlock(k.falsy);
                     this.setTer(
                         { tag: "jmp", target: exit.id },
-                        k.falsy.lineExit,
                     );
                     entry.ter = {
                         kind: { tag: "if", truthy, falsy },
-                        line: l,
                     };
                 }
 
                 entry.ter = {
                     kind: { tag: "if", truthy, falsy },
-                    line: l,
                 };
                 this.pushBlock(exit);
                 return;
@@ -179,17 +171,17 @@ class FnLowerer {
                     this.pushStmt({
                         tag: "store_local",
                         local: this.returnLocal,
-                    }, l);
+                    });
                 }
-                this.setTer({ tag: "jmp", target: this.returnBlock.id }, l);
-                this.pushNewBlock(l);
+                this.setTer({ tag: "jmp", target: this.returnBlock.id });
+                this.pushNewBlock();
                 return;
             }
             case "break": {
                 const re = this.re.stmt(stmt)!;
                 const target = this.loopExitBlocks.get(re!.stmt.id)!;
-                this.setTer({ tag: "jmp", target }, l);
-                this.pushNewBlock(l);
+                this.setTer({ tag: "jmp", target });
+                this.pushNewBlock();
                 return;
             }
             case "assign": {
@@ -198,26 +190,26 @@ class FnLowerer {
                 switch (re.tag) {
                     case "fn":
                         this.report("cannot assign to expression", stmt.line);
-                        this.pushStmt({ tag: "error" }, stmt.line);
+                        this.pushStmt({ tag: "error" });
                         return;
                     case "let":
                         local = this.letLocals.get(re.stmt.id)!;
                         break;
                     case "loop":
                         this.report("cannot assign to expression", stmt.line);
-                        this.pushStmt({ tag: "error" }, stmt.line);
+                        this.pushStmt({ tag: "error" });
                         return;
                     case "param":
                         local = this.paramLocals[re.i];
                         break;
                 }
                 this.lowerExpr(k.expr);
-                this.pushStmt({ tag: "store_local", local }, l);
+                this.pushStmt({ tag: "store_local", local });
                 return;
             }
             case "expr":
                 this.lowerExpr(k.expr);
-                this.pushStmt({ tag: "pop" }, l);
+                this.pushStmt({ tag: "pop" });
                 return;
         }
         const _: never = k;
@@ -229,7 +221,7 @@ class FnLowerer {
         const k = expr.kind;
         switch (k.tag) {
             case "error":
-                this.pushStmt({ tag: "error" }, l);
+                this.pushStmt({ tag: "error" });
                 return;
             case "ident": {
                 const re = this.re.expr(expr);
@@ -243,12 +235,12 @@ class FnLowerer {
                             tag: "push",
                             val: { tag: "fn", stmt: re.stmt },
                             ty,
-                        }, l);
+                        });
                         break;
                     }
                     case "param": {
                         const local = this.paramLocals[re.i];
-                        this.pushStmt({ tag: "load_local", local }, l);
+                        this.pushStmt({ tag: "load_local", local });
                         break;
                     }
                     case "let": {
@@ -256,7 +248,7 @@ class FnLowerer {
                         if (!local) {
                             throw new Error();
                         }
-                        this.pushStmt({ tag: "load_local", local }, l);
+                        this.pushStmt({ tag: "load_local", local });
                         break;
                     }
                     case "loop":
@@ -269,7 +261,7 @@ class FnLowerer {
                     tag: "push",
                     val: { tag: "int", val: k.val },
                     ty,
-                }, l);
+                });
                 return;
             }
             case "call": {
@@ -277,7 +269,7 @@ class FnLowerer {
                     this.lowerExpr(arg);
                 }
                 this.lowerExpr(k.expr);
-                this.pushStmt({ tag: "call", args: k.args.length }, l);
+                this.pushStmt({ tag: "call", args: k.args.length });
                 return;
             }
             case "binary": {
@@ -285,16 +277,16 @@ class FnLowerer {
                 this.lowerExpr(k.right);
                 switch (k.op) {
                     case "<":
-                        this.pushStmt({ tag: "lt", ty }, l);
+                        this.pushStmt({ tag: "lt", ty });
                         break;
                     case "==":
-                        this.pushStmt({ tag: "eq", ty }, l);
+                        this.pushStmt({ tag: "eq", ty });
                         break;
                     case "+":
-                        this.pushStmt({ tag: "add", ty }, l);
+                        this.pushStmt({ tag: "add", ty });
                         break;
                     case "*":
-                        this.pushStmt({ tag: "mul", ty }, l);
+                        this.pushStmt({ tag: "mul", ty });
                         break;
                 }
                 return;
@@ -303,13 +295,13 @@ class FnLowerer {
         const _: never = k;
     }
 
-    private pushNewBlock(line: number): Block {
-        return this.pushBlock(this.newBlock(line));
+    private pushNewBlock(): Block {
+        return this.pushBlock(this.newBlock());
     }
 
-    private newBlock(line: number): Block {
+    private newBlock(): Block {
         const id = this.blockIds++;
-        const block: Block = { id, line, stmts: [] };
+        const block: Block = { id, stmts: [] };
         this.blocks.set(block.id, block);
         return block;
     }
@@ -328,12 +320,12 @@ class FnLowerer {
         return this.currentBlock;
     }
 
-    private pushStmt(kind: StmtKind, line: number) {
-        this.block().stmts.push({ kind, line });
+    private pushStmt(kind: StmtKind) {
+        this.block().stmts.push({ kind });
     }
 
-    private setTer(kind: TerKind, line: number) {
-        this.block().ter = { kind, line };
+    private setTer(kind: TerKind) {
+        this.block().ter = { kind };
     }
 
     private report(msg: string, line: number) {
